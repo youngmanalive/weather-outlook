@@ -70,31 +70,57 @@ export function buildDays(forecast) {
   })
 }
 
+export function highestImpactDay(days) {
+  if (!days.length) {
+    return null
+  }
+  return days.reduce(
+    (max, day) => (impactRank(day.impact.level) > impactRank(max.impact.level) ? day : max),
+    days[0],
+  )
+}
+
 export function summarizeThreeDay(days) {
-  const highestImpact = days.reduce((max, day) => impactRank(day.impact.level) > impactRank(max.impact.level) ? day : max, days[0])
-  if (!highestImpact || highestImpact.impact.level === 'none') {
-    return 'The next few days look low-impact.'
+  const featureDay = highestImpactDay(days)
+  if (!featureDay || featureDay.impact.level === 'none') {
+    const seed = days.map((day) => day.date).join('|')
+    return pickDeterministic(seed, THREE_DAY_NONE_IMPACT_HEADLINES)
   }
 
-  return `${highestImpact.title} has the main weather impact.`
+  if (featureDay.impact.level === 'high') {
+    return `${featureDay.title} looks like the wettest of the stretch.`
+  }
+
+  if (featureDay.impact.level === 'medium') {
+    return `Plan around ${featureDay.title}'s rain timing.`
+  }
+
+  return `${featureDay.title} has the most weather to plan around.`
 }
 
 export function summarizeThreeDayDetails(days) {
   const wetDays = days.filter((day) => day.impact.level !== 'none')
   if (wetDays.length === 0) {
-    return 'No day has a meaningful rain signal. Temperature and wind are more likely to shape how it feels.'
+    return 'No day looks meaningfully wet. Temperature and wind will shape how it feels more than rain.'
   }
 
-  return wetDays.map((day) => `${day.title}: ${day.rainLine}`).join(' ')
+  return wetDays.map((day) => `${day.title} — ${lowercaseFirst(day.rainLine)}.`).join(' ')
 }
 
 export function summarizeRainDays(days) {
   const wetDays = days.filter((day) => day.impact.level !== 'none')
   if (wetDays.length === 0) {
-    return 'No meaningful rain signal'
+    return 'Looks dry through the stretch'
   }
 
-  return wetDays.map((day) => `${day.title}: ${day.rainLine}`).join('; ')
+  return wetDays.map((day) => `${day.title}: ${lowercaseFirst(day.rainLine)}`).join('; ')
+}
+
+function lowercaseFirst(text) {
+  if (!text) {
+    return text
+  }
+  return text.charAt(0).toLowerCase() + text.slice(1)
 }
 
 export function summarizeTempRange(days) {
@@ -150,7 +176,7 @@ function interpretDay(day) {
   const timing = getTiming(wetHours)
   const temperatureNote = getTemperatureNote(day)
   const rainLine = getRainLine(day, wetHours, peakRain)
-  const windLine = day.gustMax >= 28 ? `Breezy, gusts near ${Math.round(day.gustMax)} mph` : `${Math.round(day.windMax)} mph, manageable`
+  const windLine = day.gustMax >= 28 ? `Breezy, gusts near ${Math.round(day.gustMax)} mph` : `Around ${Math.round(day.windMax)} mph, calm enough`
   const humidityLine = getHumidityLine(daylightHours)
   const confidence = getConfidence(day, wetHours)
 
@@ -169,54 +195,113 @@ function interpretDay(day) {
 }
 
 function getImpact(day, wetHours, likelyWetHours) {
-  if (day.precipTotal >= 0.35 || likelyWetHours.length >= 5 || day.precipProbabilityMax >= 85) {
+  if (
+    day.precipTotal >= 0.6 ||
+    (day.precipTotal >= 0.35 && likelyWetHours.length >= 5) ||
+    day.gustMax >= 35
+  ) {
     return { level: 'high', label: 'Likely disruptive' }
   }
 
-  if (day.precipTotal >= 0.12 || likelyWetHours.length >= 3 || day.precipProbabilityMax >= 70) {
-    return { level: 'medium', label: 'Plan around it' }
+  if (
+    day.precipTotal >= 0.12 ||
+    likelyWetHours.length >= 3 ||
+    (day.precipProbabilityMax >= 75 && wetHours.length >= 2)
+  ) {
+    return { level: 'medium', label: 'Timing matters' }
   }
 
   if (day.precipTotal >= 0.02 || wetHours.length > 0 || day.precipProbabilityMax >= 40) {
     return { level: 'low', label: 'Low impact' }
   }
 
-  return { level: 'none', label: 'Minimal impact' }
+  return { level: 'none', label: 'Easy day' }
 }
 
+const THREE_DAY_NONE_IMPACT_HEADLINES = [
+  'The next few days look low-impact.',
+  'The next few days look manageable on the weather front.',
+  'Overall, the stretch ahead looks fairly tame weather-wise.',
+  'Nothing major jumps out for the next few days — mostly routine weather.',
+  'The pattern ahead stays fairly low-drama for outdoor plans.',
+]
+
+const NONE_IMPACT_HEADLINE_LINES = [
+  (mc) => `Mostly ${mc} and easy to plan around.`,
+  (mc) => `Mostly ${mc} with little to work around.`,
+  (mc) => `Mostly ${mc} — the forecast shouldn't shape your day.`,
+  (mc) => `Mostly ${mc} and quiet overall.`,
+  (mc) => `Mostly ${mc}, a calm day on the weather front.`,
+]
+
+const LOW_IMPACT_HEADLINE_LINES = [
+  (mc) => `A ${mc} day with only a hint of rain.`,
+  (mc) => `A ${mc} day — rain should stay a minor footnote.`,
+  (mc) => `A ${mc} day, with light rain at worst.`,
+  (mc) => `A ${mc} day — wet spells possible but not the main story.`,
+]
+
+const MEDIUM_IMPACT_HEADLINE_LINES = [
+  () => `Workable day, but rain timing matters.`,
+  () => `Mostly usable, with a wet window to plan around.`,
+  () => `A wet stretch is likely — keep timing flexible.`,
+]
+
+const HIGH_IMPACT_HEADLINE_LINES = [
+  () => `A wet, unsettled day — plan around it.`,
+  () => `Expect rain you can't easily avoid.`,
+  () => `A disruptive day — rain or wind will shape plans.`,
+]
+
 function getHeadline(day, mainCondition, impact) {
+  const seed = `${day.date}|${mainCondition}`
+
   if (impact.level === 'none') {
-    return `Mostly ${mainCondition}, with low weather impact.`
+    const line = pickDeterministic(seed, NONE_IMPACT_HEADLINE_LINES)
+    return line(mainCondition)
   }
 
   if (impact.level === 'low') {
-    return `A ${mainCondition} day with limited rain impact.`
+    const line = pickDeterministic(seed, LOW_IMPACT_HEADLINE_LINES)
+    return line(mainCondition)
   }
 
   if (impact.level === 'medium') {
-    return `Generally usable, with a wet window to plan around.`
+    const line = pickDeterministic(seed, MEDIUM_IMPACT_HEADLINE_LINES)
+    return line()
   }
 
-  return `Wet or unsettled conditions are likely.`
+  const line = pickDeterministic(seed, HIGH_IMPACT_HEADLINE_LINES)
+  return line()
+}
+
+/** Stable index from a string — same seed always picks the same option (no Math.random). */
+function pickDeterministic(seed, options) {
+  let h = 2166136261
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return options[Math.abs(h) % options.length]
 }
 
 function getSummary(day, impact, timing, temperatureNote, windLine) {
-  const amount = day.precipTotal < 0.01 ? 'little to no measurable rain' : `${day.precipTotal.toFixed(2)}" total`
+  const amount = day.precipTotal < 0.01 ? 'barely any measurable rain' : `about ${day.precipTotal.toFixed(2)} in`
   const windNote = getWindNote(windLine)
 
   if (impact.level === 'none') {
-    return `${temperatureNote} Rain looks unlikely to affect plans, and ${windNote}.`
+    return `${temperatureNote} Rain isn't expected to interfere, and ${windNote}.`
   }
 
   if (impact.level === 'low') {
-    return `${temperatureNote} A brief wet window is possible ${timing}, but the forecast only shows ${amount}. Most outdoor plans should remain practical.`
+    return `${temperatureNote} A short wet spell is possible ${timing}, but only ${amount} is expected. Most outdoor plans should stay on track.`
   }
 
   if (impact.level === 'medium') {
-    return `${temperatureNote} The wet window is most likely ${timing}, with ${amount}. Keep timing flexible for longer outdoor plans.`
+    return `${temperatureNote} The wettest stretch lands ${timing}, with ${amount}. Stay flexible for longer outdoor plans.`
   }
 
-  return `${temperatureNote} Rain may be difficult to avoid ${timing}, with ${amount}. Timing will matter for outdoor plans.`
+  return `${temperatureNote} Rain may be hard to avoid ${timing}, with ${amount}. Timing will shape what's worth doing outside.`
 }
 
 function getWindNote(windLine) {
@@ -224,7 +309,7 @@ function getWindNote(windLine) {
     return windLine.replace('Breezy,', 'wind may be breezy, with')
   }
 
-  return `wind should stay manageable near ${windLine}`
+  return 'wind should stay calm enough to ignore'
 }
 
 function getHumidityLine(hours) {
@@ -257,34 +342,50 @@ function getHumidityLine(hours) {
 
 function getRainLine(day, wetHours, peakRain) {
   if (day.precipTotal < 0.01 && day.precipProbabilityMax < 35) {
-    return 'Dry in practice'
+    return 'Looks dry'
   }
 
-  const amount = day.precipTotal < 0.01 ? 'trace' : `${day.precipTotal.toFixed(2)}"`
-  const peak = peakRain ? `${formatHour(peakRain.time)} peak` : 'brief peak'
-  const hours = wetHours.length === 1 ? '1 hour flagged' : `${wetHours.length} hours flagged`
+  if (day.precipTotal < 0.01) {
+    return peakRain ? `Trace at most, peak chance around ${formatHour(peakRain.time)}` : 'Trace at most'
+  }
 
-  return `${amount}, ${hours}, ${peak}`
+  const amount = `${day.precipTotal.toFixed(2)} in`
+  const peakLabel = peakRain ? ` around ${formatHour(peakRain.time)}` : ''
+
+  if (wetHours.length === 0) {
+    return `About ${amount}${peakLabel}`
+  }
+
+  if (wetHours.length === 1) {
+    return `About ${amount}, brief${peakLabel}`
+  }
+
+  if (wetHours.length <= 3) {
+    return `About ${amount} over a few hours${peakLabel ? `, peak${peakLabel}` : ''}`
+  }
+
+  return `About ${amount} on and off${peakLabel ? `, peak${peakLabel}` : ''}`
 }
 
 function getReason(day, wetHours, peakRain) {
   if (!peakRain) {
-    return 'No hourly detail is available for this day yet.'
+    return 'Hourly detail is not available for this day yet.'
   }
 
   if (wetHours.length === 0 && day.precipTotal < 0.01) {
-    return `No meaningful daytime rain is flagged, even though probability briefly reaches ${peakRain.precipProbability}%.`
+    return `No meaningful daytime rain is expected, even though chances briefly reach ${peakRain.precipProbability}%.`
   }
 
   if (day.precipTotal < 0.01 && day.precipProbabilityMax >= 35) {
-    return `The icon may look cautious because probability peaks near ${peakRain.precipProbability}%, but modeled accumulation stays near trace.`
+    return `Forecast looks cautious — chances peak near ${peakRain.precipProbability}%, but only a trace of rain is expected.`
   }
 
   if (wetHours.length <= 2 && day.precipTotal < 0.05) {
-    return `Only ${wetHours.length} daytime ${wetHours.length === 1 ? 'hour is' : 'hours are'} flagged, with ${day.precipTotal.toFixed(2)}" total.`
+    const hourWord = wetHours.length === 1 ? 'hour' : 'hours'
+    return `Only about ${wetHours.length} daytime ${hourWord} of rain is expected, with about ${day.precipTotal.toFixed(2)} in total.`
   }
 
-  return `Daytime rain signal spans ${wetHours.length} hours, with ${day.precipTotal.toFixed(2)}" total and a ${day.precipProbabilityMax}% peak chance.`
+  return `Rain looks likely on and off through the day, with about ${day.precipTotal.toFixed(2)} in expected and chances peaking near ${day.precipProbabilityMax}%.`
 }
 
 function getTiming(hours) {
@@ -316,14 +417,14 @@ function getTemperatureNote(day) {
 
 function getConfidence(day, wetHours) {
   if (day.precipProbabilityMax >= 70 && wetHours.length >= 3) {
-    return 'Confidence: solid'
+    return 'Solid signal'
   }
 
   if (day.precipProbabilityMax >= 45 && day.precipTotal < 0.04) {
-    return 'Confidence: mixed'
+    return 'Mixed signal'
   }
 
-  return 'Confidence: decent'
+  return 'Reliable forecast'
 }
 
 function average(values) {

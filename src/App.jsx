@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { buildDays } from './forecastInterpretation'
+import { buildDays, highestImpactDay } from './forecastInterpretation'
 import { DEFAULT_PLACE, formatPlace, placeFromPosition, readStoredPlace, writeStoredPlace } from './places'
 import { fetchForecast, searchPlaces as searchPlaceApi } from './weatherApi'
 import { DailyCards, ForecastControls, ForecastSummary, HourlyEvidence, LocationDialog } from './WeatherSections'
 import './App.css'
+
+const LATE_EVENING_HOUR = 21
+
+function getInitialView() {
+  return new Date().getHours() >= LATE_EVENING_HOUR ? 'tomorrow' : 'today'
+}
 
 function App() {
   const [initialLocation] = useState(() => {
@@ -17,7 +23,7 @@ function App() {
   const [query, setQuery] = useState(initialLocation.place.name)
   const [searchResults, setSearchResults] = useState([])
   const [forecast, setForecast] = useState(null)
-  const [selectedView, setSelectedView] = useState('today')
+  const [selectedView, setSelectedView] = useState(getInitialView)
   const [isLocationDialogOpen, setIsLocationDialogOpen] = useState(false)
   const [forecastStatus, setForecastStatus] = useState('idle')
   const [locationStatus, setLocationStatus] = useState('idle')
@@ -71,7 +77,7 @@ function App() {
 
   const days = useMemo(() => buildDays(forecast), [forecast])
   const activeDays = selectedView === 'three' ? days.slice(0, 3) : [days[selectedView === 'today' ? 0 : 1]].filter(Boolean)
-  const primaryDay = activeDays[0]
+  const primaryDay = selectedView === 'three' ? highestImpactDay(activeDays) : activeDays[0]
   const currentPlaceLabel = formatPlace(place)
   const labelledSearchResults = searchResults.map((result) => ({
     ...result,

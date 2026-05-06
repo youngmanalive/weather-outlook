@@ -60,9 +60,7 @@ body {
   min-width: 320px;
   min-height: 100svh;
   margin: 0;
-  background:
-    radial-gradient(circle at 50% -20%, rgba(103, 214, 230, 0.1), transparent 34rem),
-    var(--bg);
+  background: var(--bg);
 }
 
 button,

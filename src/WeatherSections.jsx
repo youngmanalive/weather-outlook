@@ -48,8 +48,8 @@ export function LocationDialog({
       >
         <div className="dialog-heading">
           <div>
-            <h2 id="location-dialog-title">Location</h2>
-            <p>{currentPlace}</p>
+            <h2 id="location-dialog-title">Where should we forecast?</h2>
+            <p>Currently showing {currentPlace}</p>
           </div>
           <button type="button" className="close-button" onClick={onClose} aria-label="Close location dialog">
             ×
@@ -58,17 +58,18 @@ export function LocationDialog({
 
         <form className="search" onSubmit={onSearch}>
           <label className="search-label" htmlFor="location-search">
-            Search city or town
+            Search a city, town, or ZIP
           </label>
           <div className="search-row">
             <input
               id="location-search"
               value={query}
               onChange={(event) => onQueryChange(event.target.value)}
-              placeholder="Fairfield, PA"
+              placeholder="e.g. Fairfield, PA or 17320"
             />
             <button type="submit">Search</button>
           </div>
+          <p className="search-hint">We'll only use your location to pull a forecast.</p>
         </form>
 
         {(dialogNotice || locationStatus !== 'idle') && (
@@ -113,7 +114,7 @@ export function ForecastSummary({ activeDays, primaryDay, selectedView }) {
         <p className="outlook-copy">{selectedView === 'three' ? summarizeThreeDayDetails(activeDays) : primaryDay.summary}</p>
 
         <div className="impact-row">
-          <span>{primaryDay.impact.label}</span>
+          <span className="impact-chip">{primaryDay.impact.label}</span>
           {selectedView !== 'three' && <span>{primaryDay.confidence}</span>}
         </div>
       </article>
@@ -136,11 +137,11 @@ export function DailyCards({ days }) {
   return (
     <section className="day-grid" aria-label="Daily outlooks">
       {days.map((day) => (
-        <article key={day.date} className="day-card">
+        <article key={day.date} className={`day-card impact-${day.impact.level}`}>
           <p>{day.title}</p>
           <h3>{day.headline}</h3>
           <small>{day.rainLine} · {Math.round(day.low)}-{Math.round(day.high)}°F</small>
-          <span>{day.impact.label}</span>
+          <span className="impact-chip">{day.impact.label}</span>
         </article>
       ))}
     </section>
