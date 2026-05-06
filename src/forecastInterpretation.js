@@ -240,13 +240,13 @@ const LOW_HEADLINES = [
 
 const MEDIUM_HEADLINES = [
   () => `Plan around the wet window.`,
-  () => `Rain timing matters today.`,
+  () => `Rain timing matters.`,
   () => `Wet stretch likely.`,
 ]
 
 const HIGH_HEADLINES = [
   () => `Wet day. Plan around it.`,
-  () => `Rain hard to avoid today.`,
+  () => `Rain will be hard to avoid.`,
   () => `Disruptive rain or wind likely.`,
 ]
 
